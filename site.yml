@@ -1,0 +1,217 @@
+---
+- name: Provision single-VM Moodle (Ubuntu 24.04)
+  hosts: moodle
+  become: true
+  vars_files:
+    - group_vars/moodle.yml
+
+  vars:
+    mysql_socket: /var/run/mysqld/mysqld.sock
+
+  module_defaults:
+    community.mysql.mysql_user:
+      login_unix_socket: "{{ mysql_socket }}"
+    community.mysql.mysql_db:
+      login_unix_socket: "{{ mysql_socket }}"
+
+  pre_tasks:
+    - name: Apt update
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - software-properties-common
+          - unzip
+          - git
+          - curl
+          - jq
+          - ca-certificates
+          - cron
+        state: present
+
+    - name: Ensure python driver for MySQL is present
+      apt:
+        name: python3-pymysql
+        state: present
+
+  tasks:
+    # ---- MariaDB ----
+    - name: Install MariaDB server
+      apt:
+        name: [mariadb-server]
+        state: present
+
+    - name: Drop Moodle DB tuning file
+      template:
+        src: templates/mariadb_moodle.cnf.j2
+        dest: /etc/mysql/mariadb.conf.d/60-moodle.cnf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart MariaDB
+
+    - name: Ensure MariaDB started
+      service:
+        name: mariadb
+        state: started
+        enabled: true
+
+    - name: Set root password if configured (skip when empty)
+      community.mysql.mysql_user:
+        name: root
+        host: localhost
+        password: "{{ db_root_password }}"
+        check_implicit_admin: true
+      when: db_root_password | length > 0
+
+    - name: Create DB
+      community.mysql.mysql_db:
+        name: "{{ db_name }}"
+        encoding: utf8mb4
+        collation: utf8mb4_unicode_ci
+        state: present
+
+    - name: Create DB user and grant
+      community.mysql.mysql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        priv: "{{ db_name }}.*:ALL"
+        host: "localhost"
+        state: present
+
+    # ---- PHP & Nginx ----
+    - name: Install PHP-FPM + extensions and Nginx
+      apt:
+        name:
+          - nginx
+          - php-fpm
+          - php-mysql
+          - php-xml
+          - php-gd
+          - php-curl
+          - php-zip
+          - php-intl
+          - php-mbstring
+          - php-soap
+          - php-bcmath
+          - php-ldap
+        state: present
+
+    - name: Detect PHP-FPM conf.d directory
+      shell: |
+        set -e
+        v=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+        echo "/etc/php/${v}/fpm/conf.d"
+      args: { executable: /bin/bash }
+      register: php_confdir
+      changed_when: false
+
+    - name: Get PHP major.minor version
+      command: php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'
+      register: php_ver
+      changed_when: false
+
+    - name: Determine PHP-FPM service name
+      set_fact:
+        php_fpm_service: "php{{ php_ver.stdout }}-fpm"
+
+    - name: Drop PHP ini overrides
+      template:
+        src: templates/php.ini.j2
+        dest: "{{ php_confdir.stdout }}/90-moodle.ini"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart PHP-FPM
+
+    - name: Ensure moodle directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ moodle_web_user }}"
+        group: "{{ moodle_web_group }}"
+        mode: "02775"
+      loop:
+        - "{{ moodle_www_root }}"
+        - "{{ moodle_data_root }}"
+
+    - name: Download Moodle tarball
+      get_url:
+        url: "{{ moodle_tarball_url }}"
+        dest: /tmp/moodle.tgz
+        mode: "0644"
+
+    # 展開先を /var/www/moodle に統一（idempotent）
+    - name: Unarchive Moodle
+      unarchive:
+        src: /tmp/moodle.tgz
+        dest: "{{ moodle_www_root }}"
+        remote_src: true
+        extra_opts: ["--strip-components=1"]
+      args:
+        creates: "{{ moodle_www_root }}/index.php"
+
+    - name: Set ownership for web root
+      file:
+        path: "{{ moodle_www_root }}"
+        state: directory
+        recurse: true
+        owner: "{{ moodle_web_user }}"
+        group: "{{ moodle_web_group }}"
+
+    - name: Configure Nginx vhost
+      template:
+        src: templates/nginx_moodle.conf.j2
+        dest: /etc/nginx/sites-available/moodle.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable vhost
+      file:
+        src: /etc/nginx/sites-available/moodle.conf
+        dest: /etc/nginx/sites-enabled/moodle.conf
+        state: link
+        force: true
+      notify: Reload Nginx
+
+    - name: Disable default vhost
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload Nginx
+
+    # ---- Cron for Moodle ----
+    - name: Ensure moodle cron job
+      cron:
+        name: "Moodle cron"
+        user: "{{ moodle_web_user }}"
+        minute: "*/1"
+        job: "/usr/bin/php {{ moodle_www_root }}/admin/cli/cron.php >/dev/null 2>&1"
+
+    # ---- Permissions baseline ----
+    - name: Set directory permissions
+      command: find {{ moodle_www_root }} -type d -exec chmod 2775 {} \;
+
+    - name: Set file permissions
+      command: find {{ moodle_www_root }} -type f -exec chmod 0664 {} \;
+
+  handlers:
+    - name: Restart MariaDB
+      service:
+        name: mariadb
+        state: restarted
+
+    - name: Restart PHP-FPM
+      service:
+        name: "{{ php_fpm_service }}"
+        state: restarted
+
+    - name: Reload Nginx
+      service:
+        name: nginx
+        state: reloaded
+
