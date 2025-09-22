@@ -1,0 +1,29 @@
+# /etc/nginx/sites-available/moodle.conf
+server {
+    listen {{ listen_port }} default_server;
+    server_name {{ server_name }};
+
+    root {{ moodle_www_root }};
+    index index.php index.html index.htm;
+
+    client_max_body_size {{ php_upload_max_filesize }};
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ [^/]\.php(/|$) {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php-fpm.sock;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+        expires 7d;
+        log_not_found off;
+    }
+
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options SAMEORIGIN;
+    add_header X-XSS-Protection "1; mode=block";
+}
+

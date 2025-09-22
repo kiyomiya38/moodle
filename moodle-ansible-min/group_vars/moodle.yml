@@ -1,0 +1,30 @@
+# ====== 基本設定 ======
+moodle_version_label: "stable405"
+moodle_tarball_url: "https://download.moodle.org/download.php/direct/stable405/moodle-latest-405.tgz"
+
+moodle_site_name: "Moodle on Single VM"
+moodle_www_root: "/var/www/moodle"
+moodle_data_root: "/var/moodledata"
+moodle_web_user: "www-data"
+moodle_web_group: "www-data"
+
+# PHP 設定
+php_upload_max_filesize: "100M"
+php_post_max_size: "100M"
+php_memory_limit: "256M"
+php_max_execution_time: "120"
+php_max_input_vars: "5000"
+
+# DB 設定（MariaDB ローカル）
+db_name: "moodle"
+db_user: "moodle"
+db_password: "ChangeMeStrongPassword!"   # ★本番は必ず強力な値に変更
+db_root_password: ""                      # 空＝unix_socket 認証で管理（Ubuntu 標準）
+
+# Nginx
+server_name: "_"      # まだFQDNがない場合は "_"（デフォルトサーバ）
+listen_port: 80
+enable_https: false   # 初期は HTTP のみ
+
+# 管理者（初回 Web UI セットアップで使用する想定）
+admin_email: "admin@example.com"
