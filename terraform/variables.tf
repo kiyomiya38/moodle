@@ -1,11 +1,11 @@
 variable "project_name" { default = "moodle-osaka" }
-variable "region" { default = "ap-northeast-3" } # Osaka
+variable "region"       { default = "ap-northeast-3" } # Osaka
 
 # EC2 types
 variable "ws_instance_type"     { default = "t3.medium" }
 variable "moodle_instance_type" { default = "t3.xlarge" }
 
-# Use an existing key pair in the target region
+# 互換のため残す（未使用）
 variable "key_name" { default = "test-key" }
 
 # Disks
@@ -18,10 +18,11 @@ variable "my_ip_cidr" {
   default     = "0.0.0.0/0"
 }
 
-# SSM Parameter to deliver your PEM content onto the workstation
+# 互換のため残す（未使用）。プロンプト抑止のため default を付与。
 variable "ssm_param_name" { default = "/infra/test-key-pem" }
 variable "test_key_pem" {
-  description = "The PEM content of the key named by var.key_name"
+  description = "The PEM content of the key named by var.key_name (unused)"
   type        = string
   sensitive   = true
+  default     = ""
 }
