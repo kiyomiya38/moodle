@@ -1,1 +1,4 @@
 export TF_VAR_test_key_pem="$(cat ~/.ssh/test-key.pem)"
+
+ansible-playbook -i inventory.ini site.yml
+
