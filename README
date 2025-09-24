@@ -5,3 +5,5 @@ ansible-playbook -i inventory.ini site.yml
 ansible-playbook -i inventory.ini site_separated.yml --limit db
 
 ansible-playbook -i inventory.ini site_separated.yml --limit web
+
+scp -i ./keys/moodle-osaka.pem -r ../moodle-ansible-min ubuntu@56.155.87.245:/home/ubuntu/
